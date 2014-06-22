@@ -34,6 +34,7 @@ struct int_data {
 
 struct list_item {
 	char *name;
+	bool disabled;
 
 	union {
 		char      *str;
@@ -522,9 +523,10 @@ void obs_property_list_clear(obs_property_t p)
 		list_data_free(data);
 }
 
-static void add_item(struct list_data *data, const char *name, const void *val)
+static size_t add_item(struct list_data *data, const char *name,
+		const void *val)
 {
-	struct list_item item;
+	struct list_item item = { NULL };
 	item.name  = bstrdup(name);
 
 	if (data->format == OBS_COMBO_FORMAT_INT)
@@ -534,31 +536,34 @@ static void add_item(struct list_data *data, const char *name, const void *val)
 	else
 		item.str = bstrdup(val);
 
-	da_push_back(data->items, &item);
+	return da_push_back(data->items, &item);
 }
 
-void obs_property_list_add_string(obs_property_t p,
+size_t obs_property_list_add_string(obs_property_t p,
 		const char *name, const char *val)
 {
 	struct list_data *data = get_list_data(p);
 	if (data && data->format == OBS_COMBO_FORMAT_STRING)
-		add_item(data, name, val);
+		return add_item(data, name, val);
+	return 0;
 }
 
-void obs_property_list_add_int(obs_property_t p,
+size_t obs_property_list_add_int(obs_property_t p,
 		const char *name, long long val)
 {
 	struct list_data *data = get_list_data(p);
 	if (data && data->format == OBS_COMBO_FORMAT_INT)
-		add_item(data, name, &val);
+		return add_item(data, name, &val);
+	return 0;
 }
 
-void obs_property_list_add_float(obs_property_t p,
+size_t obs_property_list_add_float(obs_property_t p,
 		const char *name, double val)
 {
 	struct list_data *data = get_list_data(p);
 	if (data && data->format == OBS_COMBO_FORMAT_FLOAT)
-		add_item(data, name, &val);
+		return add_item(data, name, &val);
+	return 0;
 }
 
 void obs_property_list_item_remove(obs_property_t p, size_t idx)
@@ -574,6 +579,21 @@ size_t obs_property_list_item_count(obs_property_t p)
 {
 	struct list_data *data = get_list_data(p);
 	return data ? data->items.num : 0;
+}
+
+bool obs_property_list_item_disabled(obs_property_t p, size_t idx)
+{
+	struct list_data *data = get_list_data(p);
+	return (data && idx < data->items.num) ?
+		data->items.array[idx].disabled : false;
+}
+
+void obs_property_list_item_disable(obs_property_t p, size_t idx, bool disabled)
+{
+	struct list_data *data = get_list_data(p);
+	if (!data || idx >= data->items.num)
+		return;
+	data->items.array[idx].disabled = disabled;
 }
 
 const char *obs_property_list_item_name(obs_property_t p, size_t idx)

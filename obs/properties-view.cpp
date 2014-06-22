@@ -6,8 +6,10 @@
 #include <QDoubleSpinBox>
 #include <QComboBox>
 #include <QPushButton>
+#include <QStandardItem>
 #include "qt-wrappers.hpp"
 #include "properties-view.hpp"
+#include "obs-app.hpp"
 #include <string>
 
 using namespace std;
@@ -154,9 +156,57 @@ static void AddComboItem(QComboBox *combo, obs_property_t prop,
 	}
 
 	combo->addItem(QT_UTF8(name), var);
+
+	if (!obs_property_list_item_disabled(prop, idx))
+		return;
+
+	int index = combo->findText(QT_UTF8(name));
+	if (index < 0)
+		return;
+
+	QStandardItemModel *model =
+		dynamic_cast<QStandardItemModel*>(combo->model());
+	if (!model)
+		return;
+
+	QStandardItem *item = model->item(index);
+	item->setFlags(Qt::NoItemFlags);
 }
 
-QWidget *OBSPropertiesView::AddList(obs_property_t prop)
+template <long long get_int(obs_data_t, const char*),
+	 double get_double(obs_data_t, const char*),
+	 const char *get_string(obs_data_t, const char*)>
+static string from_obs_data(obs_data_t data, const char *name,
+		obs_combo_format format)
+{
+	switch (format) {
+	case OBS_COMBO_FORMAT_INT:
+		return to_string(get_int(data, name));
+	case OBS_COMBO_FORMAT_FLOAT:
+		return to_string(get_double(data, name));
+	case OBS_COMBO_FORMAT_STRING:
+		return get_string(data, name);
+	default:
+		return "";
+	}
+}
+
+static string from_obs_data(obs_data_t data, const char *name,
+		obs_combo_format format)
+{
+	return from_obs_data<obs_data_getint, obs_data_getdouble,
+	       obs_data_getstring>(data, name, format);
+}
+
+static string from_obs_data_autoselect(obs_data_t data, const char *name,
+		obs_combo_format format)
+{
+	return from_obs_data<obs_data_get_autoselect_int,
+	       obs_data_get_autoselect_double,
+	       obs_data_get_autoselect_string>(data, name, format);
+}
+
+QWidget *OBSPropertiesView::AddList(obs_property_t prop, bool &warning)
 {
 	const char       *name  = obs_property_name(prop);
 	QComboBox        *combo = new QComboBox();
@@ -171,24 +221,13 @@ QWidget *OBSPropertiesView::AddList(obs_property_t prop)
 	if (type == OBS_COMBO_TYPE_EDITABLE)
 		combo->setEditable(true);
 
-	if (format == OBS_COMBO_FORMAT_INT) {
-		int    val       = (int)obs_data_getint(settings, name);
-		string valString = to_string(val);
-		idx              = combo->findData(QT_UTF8(valString.c_str()));
+	string value = from_obs_data(settings, name, format);
 
-	} else if (format == OBS_COMBO_FORMAT_FLOAT) {
-		double val       = obs_data_getdouble(settings, name);
-		string valString = to_string(val);
-		idx              = combo->findData(QT_UTF8(valString.c_str()));
-
-	} else if (format == OBS_COMBO_FORMAT_STRING) {
-		const char *val  = obs_data_getstring(settings, name);
-
-		if (type == OBS_COMBO_TYPE_EDITABLE)
-			combo->lineEdit()->setText(val);
-		else
-			idx      = combo->findData(QT_UTF8(val));
-	}
+	if (format == OBS_COMBO_FORMAT_STRING &&
+			type == OBS_COMBO_TYPE_EDITABLE)
+		combo->lineEdit()->setText(QT_UTF8(value.c_str()));
+	else
+		idx = combo->findData(QT_UTF8(value.c_str()));
 
 	if (type == OBS_COMBO_TYPE_EDITABLE)
 		return NewWidget(prop, combo,
@@ -196,6 +235,26 @@ QWidget *OBSPropertiesView::AddList(obs_property_t prop)
 
 	if (idx != -1)
 		combo->setCurrentIndex(idx);
+	
+	if (obs_data_has_autoselect(settings, name)) {
+		string autoselect =
+			from_obs_data_autoselect(settings, name, format);
+		int id = combo->findData(QT_UTF8(autoselect.c_str()));
+
+		if (id != -1 && id != idx) {
+			QString actual   = combo->itemText(id);
+			QString selected = combo->itemText(idx);
+			QString combined = QTStr(
+				"Basic.PropertiesWindow.AutoSelectFormat");
+			combo->setItemText(idx,
+					combined.arg(selected).arg(actual));
+		}
+	}
+
+
+	QAbstractItemModel *model = combo->model();
+	warning = idx != -1 &&
+		model->flags(model->index(idx, 0)) == Qt::NoItemFlags;
 
 	WidgetInfo *info = new WidgetInfo(this, prop, combo);
 	connect(combo, SIGNAL(currentIndexChanged(int)), info,
@@ -228,6 +287,7 @@ void OBSPropertiesView::AddProperty(obs_property_t property,
 		return;
 
 	QWidget *widget = nullptr;
+	bool    warning = false;
 
 	switch (type) {
 	case OBS_PROPERTY_INVALID:
@@ -248,7 +308,7 @@ void OBSPropertiesView::AddProperty(obs_property_t property,
 		AddPath(property, layout);
 		break;
 	case OBS_PROPERTY_LIST:
-		widget = AddList(property);
+		widget = AddList(property, warning);
 		break;
 	case OBS_PROPERTY_COLOR:
 		/* TODO */
@@ -268,6 +328,9 @@ void OBSPropertiesView::AddProperty(obs_property_t property,
 	if (type != OBS_PROPERTY_BOOL &&
 	    type != OBS_PROPERTY_BUTTON)
 		label = new QLabel(QT_UTF8(obs_property_description(property)));
+
+	if (warning && label) //TODO: select color based on background color
+		label->setStyleSheet("QLabel { color: red; }");
 
 	if (label && minSize) {
 		label->setMinimumWidth(minSize);
