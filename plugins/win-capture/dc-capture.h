@@ -20,6 +20,8 @@ struct dc_capture {
 	HDC        hdc;
 	HBITMAP    bmp, old_bmp;
 	BYTE       *bits;
+	HWND	   window;
+	HDC	   hdc_target;
 
 	bool       capture_cursor;
 	bool       cursor_captured;
@@ -29,7 +31,7 @@ struct dc_capture {
 };
 
 extern void dc_capture_init(struct dc_capture *capture, int x, int y,
-		uint32_t width, uint32_t height, bool cursor,
+		uint32_t width, uint32_t height, HWND window, bool cursor,
 		bool compatibility);
 extern void dc_capture_free(struct dc_capture *capture);
 

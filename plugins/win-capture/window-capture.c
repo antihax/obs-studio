@@ -429,7 +429,7 @@ static void wc_tick(void *data, float seconds)
 		wc->last_rect = rect;
 		dc_capture_free(&wc->capture);
 		dc_capture_init(&wc->capture, 0, 0, rect.right, rect.bottom,
-				wc->cursor, wc->compatibility);
+				wc->window, wc->cursor, wc->compatibility);
 	}
 
 	dc_capture_capture(&wc->capture, wc->window);

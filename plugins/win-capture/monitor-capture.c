@@ -65,7 +65,7 @@ static void update_monitor(struct monitor_capture *capture,
 	height = monitor.rect.bottom - monitor.rect.top;
 
 	dc_capture_init(&capture->data, monitor.rect.left, monitor.rect.top,
-			width, height, capture->capture_cursor,
+			width, height, NULL, capture->capture_cursor,
 			capture->compatibility);
 }
 

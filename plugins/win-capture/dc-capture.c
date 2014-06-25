@@ -25,7 +25,7 @@ static inline void init_textures(struct dc_capture *capture)
 }
 
 void dc_capture_init(struct dc_capture *capture, int x, int y,
-		uint32_t width, uint32_t height, bool cursor,
+		uint32_t width, uint32_t height, HWND window, bool cursor,
 		bool compatibility)
 {
 	memset(capture, 0, sizeof(struct dc_capture));
@@ -35,6 +35,7 @@ void dc_capture_init(struct dc_capture *capture, int x, int y,
 	capture->width          = width;
 	capture->height         = height;
 	capture->capture_cursor = cursor;
+	capture->window		= window,
 
 	gs_entercontext(obs_graphics());
 
@@ -66,16 +67,19 @@ void dc_capture_init(struct dc_capture *capture, int x, int y,
 				NULL, 0);
 		capture->old_bmp = SelectObject(capture->hdc, capture->bmp);
 	}
+	capture->hdc_target = GetDC(window);
 }
 
 void dc_capture_free(struct dc_capture *capture)
 {
+	ReleaseDC(NULL, capture->hdc_target);
+
 	if (capture->hdc) {
 		SelectObject(capture->hdc, capture->old_bmp);
 		DeleteDC(capture->hdc);
 		DeleteObject(capture->bmp);
 	}
-
+	
 	gs_entercontext(obs_graphics());
 
 	for (int i = 0; i < capture->num_textures; i++)
@@ -141,7 +145,10 @@ static inline void dc_capture_release_dc(struct dc_capture *capture)
 
 void dc_capture_capture(struct dc_capture *capture, HWND window)
 {
-	HDC hdc_target;
+	
+	int tmp;
+	uint64_t s = __rdtscp(&tmp);
+
 	HDC hdc;
 
 	if (capture->capture_cursor) {
@@ -160,12 +167,12 @@ void dc_capture_capture(struct dc_capture *capture, HWND window)
 		return;
 	}
 
-	hdc_target = GetDC(window);
+	capture->hdc_target = GetDC(capture->window);
 
 	BitBlt(hdc, 0, 0, capture->width, capture->height,
-			hdc_target, capture->x, capture->y, SRCCOPY);
+			capture->hdc_target, capture->x, capture->y, SRCCOPY);
 
-	ReleaseDC(NULL, hdc_target);
+	ReleaseDC(NULL, capture->hdc_target);
 
 	if (capture->cursor_captured)
 		draw_cursor(capture, hdc, window);
@@ -173,6 +180,9 @@ void dc_capture_capture(struct dc_capture *capture, HWND window)
 	dc_capture_release_dc(capture);
 
 	capture->textures_written[capture->cur_tex] = true;
+	
+	uint64_t e = __rdtscp(&tmp);
+	blog(LOG_DEBUG, "inside, %d, %d", e - s, tmp);
 }
 
 static void draw_texture(struct dc_capture *capture, int id, effect_t effect)
